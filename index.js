@@ -22,93 +22,6 @@ app.get("/", (req, res) => {
   res.send("Fire & Gas Detection System API");
 });
 
-// // GET /api/sensor-logs
-// app.get("/api/sensor-logs", async (req, res) => {
-//   try {
-//     const { start, end, page = 1, sort = "desc" } = req.query;
-//     const PAGE_SIZE = 10;
-//     const offset = (parseInt(page) - 1) * PAGE_SIZE;
-//     const order = sort === "asc" ? "ASC" : "DESC";
-
-//     // Count total
-//     const [countRows] = await pool.execute(
-//       `SELECT COUNT(*) as total FROM SensorLogs WHERE timestamp BETWEEN ? AND ?`,
-//       [start, end]
-//     );
-//     const total = countRows[0].total;
-
-//     // Get paginated logs
-//     const [rows] = await pool.execute(
-//       `SELECT id, timestamp, fire_detected, gas_detected, emergency_triggered, pump_status
-//        FROM SensorLogs
-//        WHERE timestamp BETWEEN ? AND ?
-//        ORDER BY timestamp ${order}
-//        LIMIT ? OFFSET ?`,
-//       [start, end, PAGE_SIZE, offset]
-//     );
-
-//     res.json({ data: rows, total });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: "Database error" });
-//   }
-// });
-
-// GET /api/sensor-logs/summary
-// app.get("/api/sensor-logs/summary", async (req, res) => {
-//   try {
-//     const { start, end } = req.query;
-//     const [rows] = await pool.execute(
-//       `SELECT
-//         SUM(fire_detected) AS fire,
-//         SUM(gas_detected) AS gas,
-//         SUM(emergency_triggered) AS emergency
-//       FROM SensorLogs
-//       WHERE timestamp BETWEEN ? AND ?`,
-//       [start, end]
-//     );
-//     res.json({
-//       fire: Number(rows[0].fire) || 0,
-//       gas: Number(rows[0].gas) || 0,
-//       emergency: Number(rows[0].emergency) || 0,
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: "Database error" });
-//   }
-// });
-
-// // GET /api/sensor-logs/aggregate
-// app.get("/api/sensor-logs/aggregate", async (req, res) => {
-//   try {
-//     const { start, end, interval = "hour" } = req.query;
-//     let groupBy, dateFormat;
-//     if (interval === "day") {
-//       groupBy = "DATE(timestamp)";
-//       dateFormat = "%Y-%m-%d";
-//     } else {
-//       groupBy = "DATE(timestamp), HOUR(timestamp)";
-//       dateFormat = "%Y-%m-%dT%H:00:00";
-//     }
-//     const [rows] = await pool.execute(
-//       `SELECT
-//         DATE_FORMAT(timestamp, ?) as timestamp,
-//         SUM(fire_detected) AS fire,
-//         SUM(gas_detected) AS gas,
-//         SUM(emergency_triggered) AS emergency
-//       FROM SensorLogs
-//       WHERE timestamp BETWEEN ? AND ?
-//       GROUP BY ${groupBy}
-//       ORDER BY timestamp ASC`,
-//       [dateFormat, start, end]
-//     );
-//     res.json(rows);
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: "Database error" });
-//   }
-// });
-
 app.get("/test-db", async (req, res) => {
   try {
     const [rows] = await pool.execute("SELECT * FROM sensor_logs");
@@ -137,6 +50,57 @@ app.delete("/notifications-db/:id", async (req, res) => {
   } catch (err) {
     console.error("Delete notification error:", err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /upload-sensor-data
+app.post("/upload-sensor-data", async (req, res) => {
+  try {
+    const { fire_detected, gas_detected, emergency_triggered, pump_status } =
+      req.body;
+
+    if (
+      fire_detected === undefined ||
+      gas_detected === undefined ||
+      emergency_triggered === undefined ||
+      pump_status === undefined
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing required fields" });
+    }
+
+    // Get the last inserted record to check if data changed
+    const [lastRows] = await pool.execute(
+      "SELECT fire_detected, gas_detected, emergency_triggered, pump_status FROM sensor_logs ORDER BY id DESC LIMIT 1"
+    );
+    const lastRecord = lastRows[0];
+
+    // Compare with last record, if same, skip insert
+    if (
+      lastRecord &&
+      lastRecord.fire_detected === fire_detected &&
+      lastRecord.gas_detected === gas_detected &&
+      lastRecord.emergency_triggered === emergency_triggered &&
+      lastRecord.pump_status === pump_status
+    ) {
+      return res
+        .status(200)
+        .json({ success: true, message: "No change detected, not inserted" });
+    }
+
+    // Insert new record
+    await pool.execute(
+      "INSERT INTO sensor_logs (fire_detected, gas_detected, emergency_triggered, pump_status, timestamp) VALUES (?, ?, ?, ?, NOW())",
+      [fire_detected, gas_detected, emergency_triggered, pump_status]
+    );
+
+    res
+      .status(201)
+      .json({ success: true, message: "Sensor data inserted successfully" });
+  } catch (err) {
+    console.error("Upload sensor data error:", err);
+    res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
 
