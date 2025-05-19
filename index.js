@@ -52,6 +52,29 @@ app.delete("/notifications-db/:id", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+// POST /add-notification
+app.post("/add-notification", async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message || message.trim() === "") {
+      return res
+        .status(400)
+        .json({ success: false, error: "Notification message is required" });
+    }
+
+    await pool.execute("INSERT INTO notifications (message) VALUES (?)", [
+      message.trim(),
+    ]);
+
+    res
+      .status(201)
+      .json({ success: true, message: "Notification added successfully" });
+  } catch (err) {
+    console.error("Add notification error:", err);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
 
 // POST /upload-sensor-data
 app.post("/upload-sensor-data", async (req, res) => {
