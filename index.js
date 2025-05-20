@@ -2,10 +2,19 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import pool from "./db.js";
+import { createServer } from "http";
+import { Server } from "socket.io";
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
+  },
+});
 
 app.use(
   cors({
@@ -15,6 +24,14 @@ app.use(
   })
 );
 app.use(express.json());
+
+io.on("connection", (socket) => {
+  console.log("✅ New client connected");
+
+  socket.on("disconnect", () => {
+    console.log("❌ Client disconnected");
+  });
+});
 
 // API routes will go here
 
@@ -66,6 +83,9 @@ app.post("/add-notification", async (req, res) => {
     await pool.execute("INSERT INTO notifications (message) VALUES (?)", [
       message.trim(),
     ]);
+    io.emit("notification-update", {
+      message: message.trim(),
+    });
 
     res
       .status(201)
@@ -117,6 +137,13 @@ app.post("/upload-sensor-data", async (req, res) => {
       "INSERT INTO sensor_logs (fire_detected, gas_detected, emergency_triggered, pump_status, timestamp) VALUES (?, ?, ?, ?, NOW())",
       [fire_detected, gas_detected, emergency_triggered, pump_status]
     );
+    io.emit("sensor-data-update", {
+      fire_detected,
+      gas_detected,
+      emergency_triggered,
+      pump_status,
+      timestamp: new Date().toISOString(),
+    });
 
     res
       .status(201)
@@ -127,6 +154,6 @@ app.post("/upload-sensor-data", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
